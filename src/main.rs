@@ -26,7 +26,7 @@ fn put_ret<T>(v: Vec<T>, val: T) -> Vec<T>
 where
     T: Clone,
 {
-    let mut d = v.clone();
+    let mut d = v;
     d.push(val);
     d
 }
@@ -90,20 +90,20 @@ enum ReaderMode {
 #[derive(Clone, Copy, Debug)]
 enum StackData {
     Digit(i64),
-    ASCII(char),
+    Ascii(char),
 }
 
 impl StackData {
     fn get_char(s: Self) -> char {
         match s {
-            StackData::ASCII(c) => c,
+            StackData::Ascii(c) => c,
             StackData::Digit(d) => (d as u8) as char,
         }
     }
 
     fn get_int(s: Self) -> i64 {
         match s {
-            StackData::ASCII(c) => c as i64,
+            StackData::Ascii(c) => c as i64,
             StackData::Digit(d) => d,
         }
     }
@@ -112,7 +112,7 @@ impl StackData {
 impl From<Operator> for StackData {
     fn from(op: Operator) -> Self {
         match op {
-            Operator::PushCharacter(c) => StackData::ASCII(c),
+            Operator::PushCharacter(c) => StackData::Ascii(c),
             Operator::PushDigit(d) => StackData::Digit(d as i64),
             _ => panic!("This operation cannot push to the stack"),
         }
@@ -158,7 +158,7 @@ fn mathematical_operation<F>(stack: Vec<StackData>, operation: F) -> Vec<StackDa
 where
     F: Fn(i64, i64) -> i64,
 {
-    let mut data = stack.clone();
+    let mut data = stack;
     let opx = data.pop();
     let opy = data.pop();
 
@@ -193,7 +193,7 @@ impl InterpreterState {
             col: 0,
             mode: ReaderMode::Normal,
             stack: Vec::new(),
-            program: program,
+            program,
             output: Vec::new(),
             terminated: false,
         }
@@ -217,12 +217,12 @@ fn derive_state(state: InterpreterState, operator: Operator) -> InterpreterState
         },
         Operator::PushCharacter(c) => {
             let mut new_stack = state.stack.clone();
-            new_stack.push(StackData::ASCII(c));
+            new_stack.push(StackData::Ascii(c));
 
             InterpreterState {
                 stack: {
                     let mut next = state.stack.clone();
-                    next.push(StackData::ASCII(c));
+                    next.push(StackData::Ascii(c));
                     next
                 },
                 ..state
@@ -309,10 +309,7 @@ fn derive_state(state: InterpreterState, operator: Operator) -> InterpreterState
             ..state
         },
 
-        Operator::SetDirection(direction) => InterpreterState {
-            direction: direction,
-            ..state
-        },
+        Operator::SetDirection(direction) => InterpreterState { direction, ..state },
 
         Operator::NoOp => state,
         Operator::End => InterpreterState {
@@ -373,7 +370,7 @@ fn main() {
     let program = parse_program(filename);
 
     let interpreter = Interpreter {
-        state: InterpreterState::new(program.clone()),
+        state: InterpreterState::new(program),
     };
 
     for state in interpreter {
