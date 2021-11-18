@@ -77,6 +77,8 @@ enum Operator {
 
     SetDirection(Direction),
 
+    Bridge,
+
     NoOp,
     Unknown(char),
     End,
@@ -143,6 +145,8 @@ fn parse_operator(reader_mode: ReaderMode, c: char) -> Operator {
             '<' => Operator::SetDirection(Direction::Left),
             '^' => Operator::SetDirection(Direction::Up),
             'v' => Operator::SetDirection(Direction::Down),
+
+            '#' => Operator::Bridge,
 
             '@' => Operator::End,
 
@@ -337,6 +341,14 @@ impl Interpretable<InterpreterState, Operator> for Interpreter<InterpreterState,
                 ..state
             },
             Operator::SetDirection(direction) => InterpreterState { direction, ..state },
+            Operator::Bridge => {
+                let mv = Direction::get_move(state.direction);
+                InterpreterState {
+                    row: state.row + mv.row,
+                    col: state.col + mv.col,
+                    ..state
+                }
+            }
             Operator::NoOp => state,
             Operator::End => InterpreterState {
                 terminated: true,
