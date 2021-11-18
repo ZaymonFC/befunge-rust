@@ -2,6 +2,7 @@ use std::{
     fs::File,
     io::BufRead,
     io::{self},
+    marker::PhantomData,
     path::Path,
 };
 
@@ -200,125 +201,6 @@ impl InterpreterState {
     }
 }
 
-fn derive_state(state: InterpreterState, operator: Operator) -> InterpreterState {
-    let partial_update = match operator {
-        Operator::PushDigit(d) => InterpreterState {
-            stack: {
-                let mut next = state.stack.clone();
-                next.push(StackData::Digit(d as i64));
-                next
-            },
-            ..state
-        },
-        Operator::PushCharacter(c) => {
-            let mut new_stack = state.stack.clone();
-            new_stack.push(StackData::Ascii(c));
-
-            InterpreterState {
-                stack: {
-                    let mut next = state.stack.clone();
-                    next.push(StackData::Ascii(c));
-                    next
-                },
-                ..state
-            }
-        }
-        Operator::Addition => InterpreterState {
-            stack: mathematical_operation(state.stack, |x, y| x + y),
-            ..state
-        },
-        Operator::Subtraction => InterpreterState {
-            stack: mathematical_operation(state.stack, |x, y| x - y),
-            ..state
-        },
-        Operator::Multiplication => InterpreterState {
-            stack: mathematical_operation(state.stack, |x, y| x * y),
-            ..state
-        },
-        Operator::Division => InterpreterState {
-            stack: mathematical_operation(state.stack, |x, y| x / y),
-            ..state
-        },
-
-        Operator::Duplicate => {
-            let mut new_stack = state.stack.clone();
-            new_stack.push(new_stack.last().expect("Nothing to duplicate").to_owned());
-
-            InterpreterState {
-                stack: new_stack,
-                ..state
-            }
-        }
-
-        Operator::Pop => {
-            let mut new_stack = state.stack.clone();
-            let out = new_stack.pop().expect("No value to Pop");
-            let out = StackData::get_char(out);
-
-            InterpreterState {
-                stack: new_stack,
-                output: put_ret(state.output, out),
-                ..state
-            }
-        }
-        Operator::PopMoveHorizontal => {
-            let mut new_stack = state.stack.clone();
-            let out = new_stack.pop().unwrap_or(StackData::Digit(0));
-            let out = StackData::get_int(out);
-
-            InterpreterState {
-                stack: new_stack,
-                direction: match out {
-                    0 => Direction::Right,
-                    _ => Direction::Left,
-                },
-                ..state
-            }
-        }
-        Operator::PopMoveVertical => {
-            let mut new_stack = state.stack.clone();
-            let out = new_stack.pop().unwrap_or(StackData::Digit(0));
-            let out = StackData::get_int(out);
-
-            InterpreterState {
-                stack: new_stack,
-                direction: match out {
-                    0 => Direction::Down,
-                    _ => Direction::Up,
-                },
-                ..state
-            }
-        }
-        Operator::ToggleStringMode => InterpreterState {
-            mode: {
-                match state.mode {
-                    ReaderMode::String => ReaderMode::Normal,
-                    ReaderMode::Normal => ReaderMode::String,
-                }
-            },
-            ..state
-        },
-        Operator::SetDirection(direction) => InterpreterState { direction, ..state },
-        Operator::NoOp => state,
-        Operator::End => InterpreterState {
-            terminated: true,
-            ..state
-        },
-        Operator::Unknown(c) => panic!("We didn't know what to do here. Operator: {}", c),
-    };
-
-    let mv = Direction::get_move(partial_update.direction);
-
-    InterpreterState {
-        row: partial_update.row + mv.row,
-        col: partial_update.col + mv.col,
-        stack: partial_update.stack.clone(),
-        output: partial_update.output.clone(),
-        program: partial_update.program.clone(),
-        ..partial_update
-    }
-}
-
 fn get_operator(
     program: Vec<String>,
     ProgramPosition { row, col }: ProgramPosition,
@@ -330,12 +212,138 @@ fn get_operator(
     parse_operator(reader_mode, operator)
 }
 
-#[derive(Debug)]
-struct Interpreter<State> {
-    state: State,
+trait Interpretable<S, Op> {
+    fn interpret(s: S, op: Op) -> S;
 }
 
-impl Iterator for Interpreter<InterpreterState> {
+#[derive(Debug)]
+struct Interpreter<State, Op> {
+    state: State,
+    _op: PhantomData<Op>,
+}
+
+impl Interpretable<InterpreterState, Operator> for Interpreter<InterpreterState, Operator> {
+    fn interpret(state: InterpreterState, operator: Operator) -> InterpreterState {
+        let partial_update = match operator {
+            Operator::PushDigit(d) => InterpreterState {
+                stack: {
+                    let mut next = state.stack.clone();
+                    next.push(StackData::Digit(d as i64));
+                    next
+                },
+                ..state
+            },
+            Operator::PushCharacter(c) => {
+                let mut new_stack = state.stack.clone();
+                new_stack.push(StackData::Ascii(c));
+
+                InterpreterState {
+                    stack: {
+                        let mut next = state.stack.clone();
+                        next.push(StackData::Ascii(c));
+                        next
+                    },
+                    ..state
+                }
+            }
+            Operator::Addition => InterpreterState {
+                stack: mathematical_operation(state.stack, |x, y| x + y),
+                ..state
+            },
+            Operator::Subtraction => InterpreterState {
+                stack: mathematical_operation(state.stack, |x, y| x - y),
+                ..state
+            },
+            Operator::Multiplication => InterpreterState {
+                stack: mathematical_operation(state.stack, |x, y| x * y),
+                ..state
+            },
+            Operator::Division => InterpreterState {
+                stack: mathematical_operation(state.stack, |x, y| x / y),
+                ..state
+            },
+
+            Operator::Duplicate => {
+                let mut new_stack = state.stack.clone();
+                new_stack.push(new_stack.last().expect("Nothing to duplicate").to_owned());
+
+                InterpreterState {
+                    stack: new_stack,
+                    ..state
+                }
+            }
+
+            Operator::Pop => {
+                let mut new_stack = state.stack.clone();
+                let out = new_stack.pop().expect("No value to Pop");
+                let out = StackData::get_char(out);
+
+                InterpreterState {
+                    stack: new_stack,
+                    output: put_ret(state.output, out),
+                    ..state
+                }
+            }
+            Operator::PopMoveHorizontal => {
+                let mut new_stack = state.stack.clone();
+                let out = new_stack.pop().unwrap_or(StackData::Digit(0));
+                let out = StackData::get_int(out);
+
+                InterpreterState {
+                    stack: new_stack,
+                    direction: match out {
+                        0 => Direction::Right,
+                        _ => Direction::Left,
+                    },
+                    ..state
+                }
+            }
+            Operator::PopMoveVertical => {
+                let mut new_stack = state.stack.clone();
+                let out = new_stack.pop().unwrap_or(StackData::Digit(0));
+                let out = StackData::get_int(out);
+
+                InterpreterState {
+                    stack: new_stack,
+                    direction: match out {
+                        0 => Direction::Down,
+                        _ => Direction::Up,
+                    },
+                    ..state
+                }
+            }
+            Operator::ToggleStringMode => InterpreterState {
+                mode: {
+                    match state.mode {
+                        ReaderMode::String => ReaderMode::Normal,
+                        ReaderMode::Normal => ReaderMode::String,
+                    }
+                },
+                ..state
+            },
+            Operator::SetDirection(direction) => InterpreterState { direction, ..state },
+            Operator::NoOp => state,
+            Operator::End => InterpreterState {
+                terminated: true,
+                ..state
+            },
+            Operator::Unknown(c) => panic!("We didn't know what to do here. Operator: {}", c),
+        };
+
+        let mv = Direction::get_move(partial_update.direction);
+
+        InterpreterState {
+            row: partial_update.row + mv.row,
+            col: partial_update.col + mv.col,
+            stack: partial_update.stack.clone(),
+            output: partial_update.output.clone(),
+            program: partial_update.program.clone(),
+            ..partial_update
+        }
+    }
+}
+
+impl Iterator for Interpreter<InterpreterState, Operator> {
     type Item = InterpreterState;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -347,7 +355,7 @@ impl Iterator for Interpreter<InterpreterState> {
 
             let operator = get_operator(self.state.program.clone(), position, self.state.mode);
 
-            let new_state = derive_state(self.state.clone(), operator);
+            let new_state = Self::interpret(self.state.clone(), operator);
             self.state = new_state;
 
             Some(self.state.clone())
@@ -363,6 +371,7 @@ fn main() {
 
     let interpreter = Interpreter {
         state: InterpreterState::new(program),
+        _op: PhantomData::<Operator>,
     };
 
     for state in interpreter {
