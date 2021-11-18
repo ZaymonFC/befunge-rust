@@ -77,7 +77,7 @@ enum Operator {
     SetDirection(Direction),
 
     NoOp,
-    Unknown,
+    Unknown(char),
     End,
 }
 
@@ -145,7 +145,7 @@ fn parse_operator(reader_mode: ReaderMode, c: char) -> Operator {
 
             '@' => Operator::End,
 
-            _ => Operator::Unknown,
+            c => Operator::Unknown(c),
         },
         ReaderMode::String => match c {
             '\"' => Operator::ToggleStringMode,
@@ -188,7 +188,7 @@ struct InterpreterState {
 impl InterpreterState {
     fn new(program: Vec<String>) -> Self {
         Self {
-            direction: Direction::Down,
+            direction: Direction::Right,
             row: 0,
             col: 0,
             mode: ReaderMode::Normal,
@@ -198,11 +198,6 @@ impl InterpreterState {
             terminated: false,
         }
     }
-}
-
-#[derive(Debug)]
-struct Interpreter<State> {
-    state: State,
 }
 
 fn derive_state(state: InterpreterState, operator: Operator) -> InterpreterState {
@@ -266,39 +261,34 @@ fn derive_state(state: InterpreterState, operator: Operator) -> InterpreterState
                 ..state
             }
         }
-
         Operator::PopMoveHorizontal => {
             let mut new_stack = state.stack.clone();
-            let out = new_stack.pop().expect("No value to Pop");
+            let out = new_stack.pop().unwrap_or(StackData::Digit(0));
             let out = StackData::get_int(out);
 
             InterpreterState {
                 stack: new_stack,
-                direction: if out == 0 {
-                    Direction::Right
-                } else {
-                    Direction::Left
+                direction: match out {
+                    0 => Direction::Right,
+                    _ => Direction::Left,
                 },
                 ..state
             }
         }
-
         Operator::PopMoveVertical => {
             let mut new_stack = state.stack.clone();
-            let out = new_stack.pop().expect("No value to Pop");
+            let out = new_stack.pop().unwrap_or(StackData::Digit(0));
             let out = StackData::get_int(out);
 
             InterpreterState {
                 stack: new_stack,
-                direction: if out == 0 {
-                    Direction::Down
-                } else {
-                    Direction::Up
+                direction: match out {
+                    0 => Direction::Down,
+                    _ => Direction::Up,
                 },
                 ..state
             }
         }
-
         Operator::ToggleStringMode => InterpreterState {
             mode: {
                 match state.mode {
@@ -308,16 +298,13 @@ fn derive_state(state: InterpreterState, operator: Operator) -> InterpreterState
             },
             ..state
         },
-
         Operator::SetDirection(direction) => InterpreterState { direction, ..state },
-
         Operator::NoOp => state,
         Operator::End => InterpreterState {
             terminated: true,
             ..state
         },
-
-        Operator::Unknown => panic!("We didn't know what to do here."),
+        Operator::Unknown(c) => panic!("We didn't know what to do here. Operator: {}", c),
     };
 
     let mv = Direction::get_move(partial_update.direction);
@@ -341,6 +328,11 @@ fn get_operator(
     let operator = line.chars().nth(col as usize).expect("Valid column");
 
     parse_operator(reader_mode, operator)
+}
+
+#[derive(Debug)]
+struct Interpreter<State> {
+    state: State,
 }
 
 impl Iterator for Interpreter<InterpreterState> {
