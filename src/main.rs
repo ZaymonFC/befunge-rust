@@ -213,6 +213,7 @@ fn get_operator(
 }
 
 trait Interpretable<S, Op> {
+    fn next_operation(s: S) -> Option<Op>;
     fn interpret(s: S, op: Op) -> S;
 }
 
@@ -223,6 +224,20 @@ struct Interpreter<State, Op> {
 }
 
 impl Interpretable<InterpreterState, Operator> for Interpreter<InterpreterState, Operator> {
+    fn next_operation(s: InterpreterState) -> Option<Operator> {
+        if !s.terminated {
+            let position = ProgramPosition {
+                row: s.row,
+                col: s.col,
+            };
+
+            let operator = get_operator(s.program.clone(), position, s.mode);
+            Some(operator)
+        } else {
+            None
+        }
+    }
+
     fn interpret(state: InterpreterState, operator: Operator) -> InterpreterState {
         let partial_update = match operator {
             Operator::PushDigit(d) => InterpreterState {
@@ -347,21 +362,12 @@ impl Iterator for Interpreter<InterpreterState, Operator> {
     type Item = InterpreterState;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if !self.state.terminated {
-            let position = ProgramPosition {
-                row: self.state.row,
-                col: self.state.col,
-            };
-
-            let operator = get_operator(self.state.program.clone(), position, self.state.mode);
-
-            let new_state = Self::interpret(self.state.clone(), operator);
-            self.state = new_state;
-
-            Some(self.state.clone())
-        } else {
-            None
-        }
+        Self::next_operation(self.state.clone())
+            .map(|operator| Self::interpret(self.state.clone(), operator))
+            .map(|state| {
+                self.state = state;
+                self.state.clone()
+            })
     }
 }
 
