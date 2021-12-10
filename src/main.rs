@@ -58,9 +58,8 @@ impl Direction {
 
 #[derive(Debug, Clone)]
 enum Operator {
-    // Data Pushers - Constructors?
-    PushDigit(u8), // 0-9 Push this number on the stack
-    PushCharacter(char),
+    PushDigit(u8),
+    PushAsciiValue(u8),
 
     // Operators
     Addition,       // +	Addition: Pop a and b, then push a+b
@@ -75,6 +74,8 @@ enum Operator {
     PopMoveHorizontal,
     PopMoveVertical,
 
+    Get,
+
     SetDirection(Direction),
 
     Bridge,
@@ -88,38 +89,6 @@ enum Operator {
 enum ReaderMode {
     Normal,
     String,
-}
-
-#[derive(Clone, Copy, Debug)]
-enum StackData {
-    Digit(i64),
-    Ascii(char),
-}
-
-impl StackData {
-    fn get_char(s: Self) -> char {
-        match s {
-            StackData::Ascii(c) => c,
-            StackData::Digit(d) => (d as u8) as char,
-        }
-    }
-
-    fn get_int(s: Self) -> i64 {
-        match s {
-            StackData::Ascii(c) => c as i64,
-            StackData::Digit(d) => d,
-        }
-    }
-}
-
-impl From<Operator> for StackData {
-    fn from(op: Operator) -> Self {
-        match op {
-            Operator::PushCharacter(c) => StackData::Ascii(c),
-            Operator::PushDigit(d) => StackData::Digit(d as i64),
-            _ => panic!("This operation cannot push to the stack"),
-        }
-    }
 }
 
 fn parse_operator(reader_mode: ReaderMode, c: char) -> Operator {
@@ -140,6 +109,7 @@ fn parse_operator(reader_mode: ReaderMode, c: char) -> Operator {
             ',' => Operator::Pop,
             '_' => Operator::PopMoveHorizontal,
             '|' => Operator::PopMoveVertical,
+            'g' => Operator::Get,
 
             '>' => Operator::SetDirection(Direction::Right),
             '<' => Operator::SetDirection(Direction::Left),
@@ -154,22 +124,22 @@ fn parse_operator(reader_mode: ReaderMode, c: char) -> Operator {
         },
         ReaderMode::String => match c {
             '\"' => Operator::ToggleStringMode,
-            _ => Operator::PushCharacter(c),
+            _ => Operator::PushAsciiValue(c as u8),
         },
     }
 }
 
-fn mathematical_operation<F>(stack: Vec<StackData>, operation: F) -> Vec<StackData>
+fn mathematical_operation<F>(stack: Vec<i32>, operation: F) -> Vec<i32>
 where
-    F: Fn(i64, i64) -> i64,
+    F: Fn(i32, i32) -> i32,
 {
     let mut data = stack;
     let opx = data.pop();
     let opy = data.pop();
 
     match (opx, opy) {
-        (Some(StackData::Digit(a)), Some(StackData::Digit(b))) => {
-            data.push(StackData::Digit(operation(a, b)));
+        (Some(a), Some(b)) => {
+            data.push(operation(a, b));
             data
         }
         _ => {
@@ -184,7 +154,7 @@ struct InterpreterState {
     row: i32,
     col: i32,
     mode: ReaderMode,
-    stack: Vec<StackData>,
+    stack: Vec<i32>,
     program: Vec<String>,
     output: Vec<char>,
     terminated: bool,
@@ -247,19 +217,19 @@ impl Interpretable<InterpreterState, Operator> for Interpreter<InterpreterState,
             Operator::PushDigit(d) => InterpreterState {
                 stack: {
                     let mut next = state.stack.clone();
-                    next.push(StackData::Digit(d as i64));
+                    next.push(d as i32);
                     next
                 },
                 ..state
             },
-            Operator::PushCharacter(c) => {
+            Operator::PushAsciiValue(c) => {
                 let mut new_stack = state.stack.clone();
-                new_stack.push(StackData::Ascii(c));
+                new_stack.push(c as i32);
 
                 InterpreterState {
                     stack: {
                         let mut next = state.stack.clone();
-                        next.push(StackData::Ascii(c));
+                        next.push(c as i32);
                         next
                     },
                     ..state
@@ -270,7 +240,7 @@ impl Interpretable<InterpreterState, Operator> for Interpreter<InterpreterState,
                 ..state
             },
             Operator::Subtraction => InterpreterState {
-                stack: mathematical_operation(state.stack, |x, y| x - y),
+                stack: mathematical_operation(state.stack, |x, y| y - x),
                 ..state
             },
             Operator::Multiplication => InterpreterState {
@@ -278,13 +248,17 @@ impl Interpretable<InterpreterState, Operator> for Interpreter<InterpreterState,
                 ..state
             },
             Operator::Division => InterpreterState {
-                stack: mathematical_operation(state.stack, |x, y| x / y),
+                stack: mathematical_operation(state.stack, |x, y| y / x),
                 ..state
             },
 
             Operator::Duplicate => {
                 let mut new_stack = state.stack.clone();
-                new_stack.push(new_stack.last().expect("Nothing to duplicate").to_owned());
+
+                if !new_stack.is_empty() {
+                    let last = new_stack.last().expect("Nothing to duplicate").to_owned();
+                    new_stack.push(last);
+                }
 
                 InterpreterState {
                     stack: new_stack,
@@ -294,8 +268,8 @@ impl Interpretable<InterpreterState, Operator> for Interpreter<InterpreterState,
 
             Operator::Pop => {
                 let mut new_stack = state.stack.clone();
-                let out = new_stack.pop().expect("No value to Pop");
-                let out = StackData::get_char(out);
+                let out = new_stack.pop().expect("No value to Pop") as u8;
+                let out = char::from(out);
 
                 InterpreterState {
                     stack: new_stack,
@@ -305,8 +279,7 @@ impl Interpretable<InterpreterState, Operator> for Interpreter<InterpreterState,
             }
             Operator::PopMoveHorizontal => {
                 let mut new_stack = state.stack.clone();
-                let out = new_stack.pop().unwrap_or(StackData::Digit(0));
-                let out = StackData::get_int(out);
+                let out = new_stack.pop().unwrap_or(0);
 
                 InterpreterState {
                     stack: new_stack,
@@ -319,8 +292,7 @@ impl Interpretable<InterpreterState, Operator> for Interpreter<InterpreterState,
             }
             Operator::PopMoveVertical => {
                 let mut new_stack = state.stack.clone();
-                let out = new_stack.pop().unwrap_or(StackData::Digit(0));
-                let out = StackData::get_int(out);
+                let out = new_stack.pop().unwrap_or(0);
 
                 InterpreterState {
                     stack: new_stack,
@@ -330,6 +302,23 @@ impl Interpretable<InterpreterState, Operator> for Interpreter<InterpreterState,
                     },
                     ..state
                 }
+            }
+            Operator::Get => {
+                let expect_message = "Cannot perform get with less than 2 items on the stack";
+                let mut stack = state.stack.clone();
+                let y = stack.pop().expect(expect_message);
+                let x = stack.pop().expect(expect_message);
+
+                let s = state.program.get(x as usize).map(|s| s.to_owned());
+
+                let c = match s {
+                    Some(s) => s.chars().into_iter().nth(y as usize).unwrap_or(0 as char) as i32,
+                    None => 0,
+                };
+
+                stack.push(c);
+
+                InterpreterState { stack, ..state }
             }
             Operator::ToggleStringMode => InterpreterState {
                 mode: {
@@ -393,9 +382,10 @@ fn main() {
     };
 
     for state in interpreter {
+        sleep(Duration::from_millis(32));
         println!(
-            "Row: {}, Col: {}, Stack: {:?} Output: {:?}",
+            "Result:\tRow: {}, Col: {}\t Stack: {:?} Output: {:?}",
             state.row, state.col, state.stack, state.output
-        )
+        );
     }
 }
